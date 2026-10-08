@@ -50,7 +50,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(threads >= 1, "--threads must be at least 1");
 
     if threads > 1 {
-        return run_threaded(&library_path, unity_version.as_deref(), rounds, &kind, threads, inputs);
+        return run_threaded(
+            &library_path,
+            unity_version.as_deref(),
+            rounds,
+            &kind,
+            threads,
+            inputs,
+        );
     }
 
     let library = AssetStudioLibrary::load(&library_path)?;
@@ -146,55 +153,57 @@ fn run_threaded(
             .filter(|(index, _)| index % threads == worker)
             .map(|(_, input)| input.clone())
             .collect();
-        handles.push(std::thread::spawn(move || -> Result<(u64, u64, u64), String> {
-            let mut hash = FNV_OFFSET;
-            let mut bytes = 0u64;
-            let mut objects = 0u64;
-            for _ in 0..rounds {
-                for input in &subset {
-                    let context = library
-                        .open(input, unity_version.as_deref(), &[], false)
-                        .map_err(|error| format!("{input}: open: {error}"))?;
-                    let mut object_indexes = Vec::new();
-                    let mut offset = 0;
-                    loop {
-                        let page = context
-                            .list_objects(offset, 4096, &[])
-                            .map_err(|error| format!("{input}: list: {error}"))?;
-                        if page.is_empty() {
-                            break;
-                        }
-                        offset += page.len() as i32;
-                        object_indexes.extend(page.iter().map(|asset| asset.index));
-                        if page.len() < 4096 {
-                            break;
-                        }
-                    }
-                    for chunk in object_indexes.chunks(64) {
-                        let requests: Vec<ObjectReadByIndexRequest> = chunk
-                            .iter()
-                            .map(|&object_index| ObjectReadByIndexRequest {
-                                object_index,
-                                kind: &kind,
-                                image_format: "raw_rgba",
-                            })
-                            .collect();
-                        let read = context
-                            .read_by_index_retry(&requests)
-                            .map_err(|error| format!("{input}: read: {error}"))?;
-                        for item in &read.items {
-                            fnv1a(&mut hash, &item.path_id.to_le_bytes());
-                            if let Some(payload) = read.payload_for(item) {
-                                fnv1a(&mut hash, payload);
-                                bytes += payload.len() as u64;
+        handles.push(std::thread::spawn(
+            move || -> Result<(u64, u64, u64), String> {
+                let mut hash = FNV_OFFSET;
+                let mut bytes = 0u64;
+                let mut objects = 0u64;
+                for _ in 0..rounds {
+                    for input in &subset {
+                        let context = library
+                            .open(input, unity_version.as_deref(), &[], false)
+                            .map_err(|error| format!("{input}: open: {error}"))?;
+                        let mut object_indexes = Vec::new();
+                        let mut offset = 0;
+                        loop {
+                            let page = context
+                                .list_objects(offset, 4096, &[])
+                                .map_err(|error| format!("{input}: list: {error}"))?;
+                            if page.is_empty() {
+                                break;
+                            }
+                            offset += page.len() as i32;
+                            object_indexes.extend(page.iter().map(|asset| asset.index));
+                            if page.len() < 4096 {
+                                break;
                             }
                         }
-                        objects += read.items.len() as u64;
+                        for chunk in object_indexes.chunks(64) {
+                            let requests: Vec<ObjectReadByIndexRequest> = chunk
+                                .iter()
+                                .map(|&object_index| ObjectReadByIndexRequest {
+                                    object_index,
+                                    kind: &kind,
+                                    image_format: "raw_rgba",
+                                })
+                                .collect();
+                            let read = context
+                                .read_by_index_retry(&requests)
+                                .map_err(|error| format!("{input}: read: {error}"))?;
+                            for item in &read.items {
+                                fnv1a(&mut hash, &item.path_id.to_le_bytes());
+                                if let Some(payload) = read.payload_for(item) {
+                                    fnv1a(&mut hash, payload);
+                                    bytes += payload.len() as u64;
+                                }
+                            }
+                            objects += read.items.len() as u64;
+                        }
                     }
                 }
-            }
-            Ok((hash, bytes, objects))
-        }));
+                Ok((hash, bytes, objects))
+            },
+        ));
     }
 
     let mut grand_bytes = 0u64;
