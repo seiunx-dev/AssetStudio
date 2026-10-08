@@ -8,6 +8,16 @@
 
 **Neither the repository, nor the tool, nor the author of the tool, nor the author of the modification is affiliated with, sponsored, or authorized by Unity Technologies or its affiliates.**
 
+## About this fork
+
+This repository is a fork of [aelurum/AssetStudioMod](https://github.com/aelurum/AssetStudioMod). Its default branch, `sekai-modified`, adds the following on top of upstream:
+
+- `AssetStudioCore`: the loading and export engine, split out so that the CLI and the FFI library share one implementation (targets net472, net8.0, net9.0 and net10.0).
+- `AssetStudioFFI`: a NativeAOT shared library (`HarukiAssetStudioFFI`, net10.0) with a typed C ABI declared in `AssetStudioFFI/haruki_assetstudio_native.h`, plus a Rust wrapper crate in `AssetStudioFFI/rust/haruki-assetstudio`. See [README.FFI.md](AssetStudioFFI/README.FFI.md).
+- Extra CLI options `--filter-exclude-mode` and `--strip-path-prefix`. See the fork's [CLI readme](AssetStudioCLI/ReadMe.md).
+
+The release, download and build badges above, the CHANGELOG and the requirements below describe upstream AssetStudioMod. This fork does not publish releases. Contributor notes for this fork are in [AGENTS.md](AGENTS.md).
+
 ## Game specific modifications
 
 - [ArknightsStudio](https://github.com/aelurum/AssetStudio/tree/ArknightsStudio)
@@ -56,7 +66,7 @@
 
 ## CLI Usage
 
-You can read CLI readme [here](https://github.com/aelurum/AssetStudio/blob/AssetStudioMod/AssetStudioCLI/ReadMe.md).
+You can read CLI readme [here](AssetStudioCLI/ReadMe.md).
 
 ### Run
 

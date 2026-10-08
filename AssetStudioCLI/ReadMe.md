@@ -11,17 +11,18 @@ AssetStudioModCLI <input path to asset file(s)/folder> [-m, --mode <value>]
                       [--log-level <value>] [--log-output <value>]
                       [--image-format <value>] [--audio-format <value>]
                       [--l2d-group-option <value>] [--l2d-motion-mode <value>]
-                      [--l2d-search-by-filename] [--l2d-force-bezier]
+                      [--l2d-search-by-filename] [--l2d-smooth-motions]
                       [--fbx-scale-factor <value>] [--fbx-bone-size <value>]
                       [--fbx-animation] [--fbx-uvs-as-diffuse]
                       [--filter-by-name <text>] [--filter-by-container <text>]
                       [--filter-by-pathid <text>] [--filter-by-text <text>]
-                      [--filter-with-regex] [--blockinfo-comp <value>]
-                      [--block-comp <value>] [--max-export-tasks <value>]
-                      [--export-asset-list <value>] [--assembly-folder <path>]
+                      [--filter-with-regex] [--filter-exclude-mode]
+                      [--blockinfo-comp <value>] [--block-comp <value>]
+                      [--max-export-tasks <value>] [--export-asset-list <value>]
+                      [--assembly-folder <path>] [--strip-path-prefix <path>]
                       [--unity-version <text>] [--decompress-to-disk]
                       [--not-restore-extension] [--ignore-typetree]
-                      [--load-all]
+                      [--raw-array] [--load-all]
 
 General Options:
   -m, --mode <value>            Specify working mode
@@ -108,7 +109,7 @@ Live2D Options:
                                 (Preferred option if all l2d assets of a single model are stored in a single file
                                 or containers are obfuscated)
 
-  --l2d-force-bezier            (Flag) If specified, Linear motion segments will be calculated as Bezier segments
+  --l2d-smooth-motions          (Flag) If specified, Linear motion segments will be calculated as Bezier segments
                                 (May help if the exported motions look jerky/not smooth enough)
 
 FBX Options:
@@ -152,7 +153,7 @@ Filter Options:
   --filter-with-regex           (Flag) If specified, the filter options will handle the specified text
                                 as a regular expression (doesn't apply to --filter-by-pathid)
 
-  --filter-exclude-mode       (Flag) If specified, the filter options will work as an exclusion
+  --filter-exclude-mode         (Flag) If specified, the filter options will work as an exclusion
                                 (i.e. assets that match the filter conditions will be excluded)
 
 Advanced Options:
@@ -200,6 +201,9 @@ Advanced Options:
 
   --ignore-typetree             (Flag) If specified, Studio will not try to parse assets at load time
                                 using their type tree
+
+  --raw-array                   (Flag) If specified, Studio will try to extract raw byte array from MonoBehaviour assets
+                                (Only for ExportRaw mode)
 
   --load-all                    (Flag) If specified, Studio will load assets of all types
                                 (Only for Dump, Info and ExportRaw modes)

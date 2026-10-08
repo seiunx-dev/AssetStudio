@@ -50,13 +50,13 @@ When buffer sizes are unknown and the caller wants strict caller-owned memory on
 
 `haruki_assetstudio_context_read_objects_v1` and `haruki_assetstudio_context_read_objects_handle_v1` remain compatibility typed paths when a caller prefers library-owned buffers. They now use the same Core payload writer path as the caller-owned read APIs. The handle variant additionally returns one `result_handle` that owns the metadata buffer and payload buffer together.
 
-Direct into/retry reads can write Core output into caller/native memory through the writer path. Payload kind handling is:
+Direct into/retry reads can write Core output into caller/native memory through the writer path. Internally, Core tags each payload with an `AssetStudioPayloadStreamingTier` (`AssetStudioCore/AssetStudioTypes.cs`). The tier is not part of the C ABI: `capabilities_v1` only exposes version numbers and integer feature flags, none of which describe the tier, so callers cannot query it. The current kind-to-tier mapping is:
 
-- `native_streaming_payload_kinds` / `source_streaming_payload_kinds`: source-level streaming with no full managed payload buffer. Current kinds: `raw`, `audio_raw`, `video_raw`.
-- `resident_buffer_payload_kinds`: direct write from arrays already resident on parsed objects. Current kinds: `movie_ogv`, `font`, `text_bytes`.
-- `generated_streaming_payload_kinds`: generated output is streamed to the caller/native buffer instead of first becoming a full managed `byte[]`. Current kinds: `shader_text`, `typetree_json`, `mesh_obj`, `image_raw_rgba`, `image_array_bundle_raw_rgba`. `shader_text` is mixed: uncompressed shaders without subprogram blobs write the original script bytes directly after the header, while compressed/subprogram shaders still generate converted text. Texture array bundles use a counting pass before the write pass so entry lengths can be emitted without retaining each raw RGBA layer as a managed array.
-- `temp_file_intermediate_payload_kinds`: output is streamed from temporary files into the caller/native buffer. Current kind: `animator_bundle_fbx`.
-- `managed_intermediate_payload_kinds`: still use full managed payload arrays before the final direct write. This is currently empty for the direct writer path.
+- Source streaming (no full managed payload buffer): `raw`, `audio_raw`, `video_raw`.
+- Direct write from arrays already resident on parsed objects: `movie_ogv`, `font`, `text_bytes`.
+- Generated streaming (output is streamed to the caller/native buffer instead of first becoming a full managed `byte[]`): `shader_text`, `typetree_json`, `mesh_obj`, `image_raw_rgba`, `image_array_bundle_raw_rgba`. `shader_text` is mixed: uncompressed shaders without subprogram blobs write the original script bytes directly after the header, while compressed/subprogram shaders still generate converted text. Texture array bundles use a counting pass before the write pass so entry lengths can be emitted without retaining each raw RGBA layer as a managed array.
+- Temp-file streaming (output is streamed from temporary files into the caller/native buffer): `animator_bundle_fbx`.
+- Managed payload (full managed array before the final write): only the fallback branch of the direct writer. With the current kind/asset matching that branch is reached only by unsupported combinations, which fail with `unsupported_kind`.
 
 FBX/animator export still uses a temporary directory internally, but the FFI bundle pack streams those files to the payload writer. FFI image reads always return raw RGBA IR; final image encoding is handled by the Rust caller.
 
@@ -70,7 +70,7 @@ With object table ABI v1, `haruki_assetstudio_asset_object` includes:
 
 Capacity hints are not a correctness contract. Direct read responses remain authoritative: use `payload_len` for valid bytes, and grow/retry on `HARUKI_ASSETSTUDIO_BUFFER_TOO_SMALL`.
 
-Texture decoding depends on the platform native `Texture2DDecoderNative` library. NativeAOT publish copies the current RID dependency next to `HarukiAssetStudioFFI` by default. External packagers should keep that file beside the FFI library or set `HARUKI_ASSET_STUDIO_NATIVE_LIBRARY_PATH` to a dependency file, dependency directory, or path-list. `capabilities_v1.supports_native_dependency_resolver` exposes the resolver contract for SDK diagnostics.
+Texture decoding depends on the platform native `Texture2DDecoderNative` library; bundle decompression and audio/FBX export use the shipped `ooz`, `fmod` and `AssetStudioFBXNative` libraries. NativeAOT publish copies everything under `AssetStudioCore/Libraries/<RID>/` next to `HarukiAssetStudioFFI` (MSBuild target `CopyHarukiNativeAotRuntimeLibraries`; not every RID ships every library). `NativeExports` registers a DllImport resolver for the texture decoder, FBX wrapper and `AssetStudio` assemblies, so it covers `Texture2DDecoderNative`, `AssetStudioFBXNative` and `ooz`. It looks them up in `HARUKI_ASSET_STUDIO_NATIVE_LIBRARY_PATH` first, then beside the FFI library, under `runtimes/<RID>/native`, in the app base directory and in the current directory. `fmod` is imported from `AssetStudioUtility`, which has no resolver registered, so it is not routed through the resolver and relies on the platform's default library search. External packagers should keep the resolver-covered files beside the FFI library or set `HARUKI_ASSET_STUDIO_NATIVE_LIBRARY_PATH` to a dependency file, dependency directory, or path-list, and make `fmod` loadable through the platform's normal search (for example the loader's library path). `capabilities_v1.supports_native_dependency_resolver` exposes the resolver contract for SDK diagnostics.
 
 ## Status And Errors
 
@@ -229,3 +229,13 @@ cargo run --manifest-path AssetStudioFFI/rust/haruki-assetstudio/Cargo.toml \
 ```
 
 It exercises capabilities, ABI layout validation, open, paged list, lookup, direct retry reads by path id and by index, and context close.
+
+The `bench` example reads every object of each input through the by-index direct retry path and prints per-bundle timing plus an FNV-1a hash over item metadata and payload bytes, so two library builds can be compared for byte-exact output:
+
+```bash
+cargo run --release --manifest-path AssetStudioFFI/rust/haruki-assetstudio/Cargo.toml \
+  --example bench -- \
+  /path/to/HarukiAssetStudioFFI.dylib \
+  [--unity-version V] [--rounds N] [--kind K] [--threads T] \
+  /path/to/bundle ...
+```
