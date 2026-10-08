@@ -154,7 +154,11 @@ namespace SpirV
 			if (typeof(T).GetTypeInfo().GetCustomAttributes<FlagsAttribute>().Any())
 			{
 				Dictionary<uint, IReadOnlyList<object>> result = new Dictionary<uint, IReadOnlyList<object>>();
+#if NETFRAMEWORK
+				foreach (T enumValue in (T[])Enum.GetValues(typeof(T)))
+#else
 				foreach (T enumValue in Enum.GetValues<T>())
+#endif
 				{
 					uint bit = Convert.ToUInt32(enumValue);
 					// bit == 0 and words[0] == 0 handles the 0x0 = None cases

@@ -1,8 +1,9 @@
 # CI for the sekai-modified fork. Builds what the fork ships and uses: the CLI
 # (net8.0, net9.0) and the NativeAOT FFI library (net10.0), plus the Rust
-# wrapper crate. The full solution is not built: AssetStudioGUI needs Windows,
-# the C++ projects need MSBuild C++ tooling and the FBX SDK, and the net472
-# targets do not currently compile (see AGENTS.md).
+# wrapper crate. The net472 targets of the CLI (and so of every managed library
+# under it) and of the GUI are compiled against the .NET Framework reference
+# assemblies. The C++ projects are not built: they need MSBuild C++ tooling and
+# the FBX SDK (see AGENTS.md).
 name: CI
 
 on:
@@ -21,7 +22,7 @@ concurrency:
 
 jobs:
   dotnet:
-    name: .NET (CLI + NativeAOT FFI)
+    name: .NET (CLI, net472, NativeAOT FFI)
     runs-on: ubuntu-latest
     env:
       DOTNET_NOLOGO: "true"
@@ -40,6 +41,12 @@ jobs:
         run: dotnet build AssetStudioCLI/AssetStudioCLI.csproj -c Release -f net8.0 -r linux-x64
       - name: Build CLI (net9.0)
         run: dotnet build AssetStudioCLI/AssetStudioCLI.csproj -c Release -f net9.0 -r linux-x64
+      # net472: compile only (-t:Compile). The post-build copy targets need the
+      # Windows C++ build outputs, and .NET Framework binaries cannot run here.
+      - name: Compile CLI and libraries (net472)
+        run: dotnet build AssetStudioCLI/AssetStudioCLI.csproj -c Release -f net472 -t:Compile
+      - name: Compile GUI (net472)
+        run: dotnet build AssetStudioGUI/AssetStudioGUI.csproj -c Release -f net472 -t:Compile -p:EnableWindowsTargeting=true
       - name: Publish NativeAOT FFI
         run: dotnet publish AssetStudioFFI/AssetStudioFFI.csproj -c Release -r linux-x64 -o ffi-out
       - name: Check FFI output

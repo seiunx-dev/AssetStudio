@@ -1,0 +1,13 @@
+<Project>
+
+  <!--
+    net472 defaults to C# 7.3, but the fork's shared sources (AssetStudio, AssetStudioUtility,
+    AssetStudioFBXWrapper, AssetStudioCore, AssetStudioCLI) use newer syntax. Pin net472 to the
+    language version of the lowest modern target (net8.0, C# 12) so anything that compiles there
+    also parses for .NET Framework. Modern targets keep their SDK defaults.
+  -->
+  <PropertyGroup Condition=" '$(TargetFramework)' == 'net472' ">
+    <LangVersion>12.0</LangVersion>
+  </PropertyGroup>
+
+</Project>

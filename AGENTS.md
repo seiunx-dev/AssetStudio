@@ -51,6 +51,13 @@ cargo run --manifest-path AssetStudioFFI/rust/haruki-assetstudio/Cargo.toml \
   --example smoke -- ../ffi-out/HarukiAssetStudioFFI.dylib /path/to/resources.assets
 ```
 
+```bash
+# net472 (any OS): compile only; the SDK pulls in the .NET Framework reference assemblies.
+# -t:Compile skips the post-build copy targets, which need Windows C++ build outputs.
+dotnet build AssetStudioCLI/AssetStudioCLI.csproj -c Release -f net472 -t:Compile
+dotnet build AssetStudioGUI/AssetStudioGUI.csproj -c Release -f net472 -t:Compile -p:EnableWindowsTargeting=true
+```
+
 Replace `osx-arm64` with the target RID (`linux-x64`, `linux-arm64`, `osx-x64`, ...). The `bench` example and the full ABI contract are documented in `AssetStudioFFI/README.FFI.md`.
 
 Building the CLI without `-r` runs the upstream `CopyExtraFilesPortable` target, which copies Windows `AssetStudioFBXNative.dll` and `Texture2DDecoderNative.dll` from the C++ projects' `bin/` output under `$(SolutionDir)`. Outside a full Windows solution build this fails with MSB3030, so pass a RID.
@@ -59,10 +66,10 @@ Building the CLI without `-r` runs the upstream `CopyExtraFilesPortable` target,
 
 `.github/workflows/ci.yml` runs on pushes and pull requests to `sekai-modified`. It builds only what the fork uses, on `ubuntu-latest` with `linux-x64`:
 
-- `dotnet`: the CLI for net8.0 and net9.0, and a NativeAOT publish of the FFI library (net10.0).
+- `dotnet`: the CLI for net8.0 and net9.0, a compile of the net472 targets of the CLI (with every managed library under it) and of the GUI, and a NativeAOT publish of the FFI library (net10.0).
 - `rust`: the Rust wrapper crate through the shared `seiunx-dev/ci-templates` `rust-ci.yml@v1` (`cargo fmt --check`, `clippy -D warnings`, `cargo test`).
 
-The full solution is not built and does not build: `AssetStudioGUI` needs Windows, the C++ projects (`AssetStudioFBXNative`, `Texture2DDecoderNative`) need MSBuild C++ tooling and the FBX SDK, and the `net472` target of `AssetStudio` (so of every project above it) fails with CS0122 because the fork's `UnconditionalSuppressMessage` attributes are not accessible on .NET Framework. CI has no asset fixtures, so it does not run the CLI or the Rust `smoke` example; do that locally against real assets. The fork publishes no releases.
+The C++ projects (`AssetStudioFBXNative`, `Texture2DDecoderNative`) are not built: they need MSBuild C++ tooling and the FBX SDK. The GUI's `-windows` targets are not built either, and nothing net472 is run, only compiled. CI has no asset fixtures, so it does not run the CLI or the Rust `smoke` example; do that locally against real assets. The fork publishes no releases.
 
 ## Configuration (FFI environment variables)
 
@@ -89,4 +96,5 @@ The full solution is not built and does not build: `AssetStudioGUI` needs Window
 - FFI image reads only return raw RGBA; encoding to PNG and other formats is the caller's job.
 - Payload streaming tiers are internal to `AssetStudioCore` (`AssetStudioPayloadStreamingTier`); `capabilities_v1` carries only ABI versions and `supports_*` flags.
 - `fmod` is only used by the CLI's export path (`AudioClipConverter`, reached from `ParallelExporter`). CoreCLR finds it through default probing because RID-specific CLI builds copy `libfmod` beside `AssetStudioUtility.dll`. No FFI entry point decodes audio, so the FFI's resolver does not cover `AssetStudioUtility` and does not need to.
+- Shared sources must keep compiling for net472. `Directory.Build.props` sets C# 12 (the net8.0 default) for net472, so newer syntax is fine, but .NET Framework lacks many APIs. The fork covers the gaps it hit with net472-only shims in `AssetStudio/Polyfills/` (`UnconditionalSuppressMessageAttribute`, an `AssetStudio.RuntimeFeature` with `IsDynamicCodeSupported = true`, also linked into `AssetStudioUtility`), `AssetStudioUtility/Polyfills/` (`Stream.Write(ReadOnlySpan<byte>)`) and `AssetStudioCore/Polyfills/` (`IsExternalInit`, `string.Contains`/`Replace` with `StringComparison`). Static APIs that cannot be polyfilled (`Math.Clamp`, `float.IsFinite`, `Path.GetRelativePath`, `Enum.GetValues<T>`) are avoided or wrapped in `#if NETFRAMEWORK`. Run the net472 compile above after touching shared code.
 - Prebuilt native libraries now live in `AssetStudioCore/Libraries/`, not `AssetStudioCLI/Libraries/`. Both the CLI and the FFI publish copy from there.
