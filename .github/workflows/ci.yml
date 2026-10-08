@@ -1,0 +1,54 @@
+# CI for the sekai-modified fork. Builds what the fork ships and uses: the CLI
+# (net8.0, net9.0) and the NativeAOT FFI library (net10.0), plus the Rust
+# wrapper crate. The full solution is not built: AssetStudioGUI needs Windows,
+# the C++ projects need MSBuild C++ tooling and the FBX SDK, and the net472
+# targets do not currently compile (see AGENTS.md).
+name: CI
+
+on:
+  push:
+    branches: [sekai-modified]
+  pull_request:
+    branches: [sekai-modified]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  dotnet:
+    name: .NET (CLI + NativeAOT FFI)
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      # A RID is required: without one the CLI's CopyExtraFilesPortable target
+      # copies Windows C++ build outputs that do not exist here (MSB3030).
+      - name: Build CLI (net8.0)
+        run: dotnet build AssetStudioCLI/AssetStudioCLI.csproj -c Release -f net8.0 -r linux-x64
+      - name: Build CLI (net9.0)
+        run: dotnet build AssetStudioCLI/AssetStudioCLI.csproj -c Release -f net9.0 -r linux-x64
+      - name: Publish NativeAOT FFI
+        run: dotnet publish AssetStudioFFI/AssetStudioFFI.csproj -c Release -r linux-x64 -o ffi-out
+      - name: Check FFI output
+        run: |
+          ls -l ffi-out
+          test -f ffi-out/HarukiAssetStudioFFI.so
+
+  rust:
+    name: Rust wrapper
+    uses: seiunx-dev/ci-templates/.github/workflows/rust-ci.yml@v1
+    with:
+      working-directory: AssetStudioFFI/rust/haruki-assetstudio

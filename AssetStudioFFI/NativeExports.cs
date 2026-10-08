@@ -62,9 +62,11 @@ public static unsafe class NativeExports
         SixLabors.ImageSharp.Configuration.Default.MaxDegreeOfParallelism = 1;
         NativeLibrary.SetDllImportResolver(typeof(TextureDecoder).Assembly, ResolveAssetStudioNativeLibrary);
         // The resolver is per-assembly. The FBX wrapper (AssetStudioFBXNative) and
-        // the AssetStudio core (ooz, fmod) declare their own DllImports; default
+        // the AssetStudio core (ooz) declare their own DllImports; default
         // probing does not search this shared library's directory, so without the
         // resolver those loads fail even when the .so ships right next to us.
+        // fmod (AssetStudioUtility) is deliberately not covered: no FFI read path
+        // decodes audio, audio reads return the stored bytes.
         NativeLibrary.SetDllImportResolver(typeof(AssetStudio.Fbx).Assembly, ResolveAssetStudioNativeLibrary);
         NativeLibrary.SetDllImportResolver(typeof(AssetStudio.AssetsManager).Assembly, ResolveAssetStudioNativeLibrary);
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>

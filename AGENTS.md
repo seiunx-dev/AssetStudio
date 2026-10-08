@@ -57,13 +57,18 @@ Building the CLI without `-r` runs the upstream `CopyExtraFilesPortable` target,
 
 ## CI and releases
 
-`.github/workflows/build.yml` is inherited from upstream. It only triggers on pushes and pull requests to `master`, a branch this fork does not have, and it builds net5/net6 GUI targets that the projects no longer declare. It has never run here. The fork publishes no releases; there is no automated build or test gate. Build locally before pushing.
+`.github/workflows/ci.yml` runs on pushes and pull requests to `sekai-modified`. It builds only what the fork uses, on `ubuntu-latest` with `linux-x64`:
+
+- `dotnet`: the CLI for net8.0 and net9.0, and a NativeAOT publish of the FFI library (net10.0).
+- `rust`: the Rust wrapper crate through the shared `seiunx-dev/ci-templates` `rust-ci.yml@v1` (`cargo fmt --check`, `clippy -D warnings`, `cargo test`).
+
+The full solution is not built and does not build: `AssetStudioGUI` needs Windows, the C++ projects (`AssetStudioFBXNative`, `Texture2DDecoderNative`) need MSBuild C++ tooling and the FBX SDK, and the `net472` target of `AssetStudio` (so of every project above it) fails with CS0122 because the fork's `UnconditionalSuppressMessage` attributes are not accessible on .NET Framework. CI has no asset fixtures, so it does not run the CLI or the Rust `smoke` example; do that locally against real assets. The fork publishes no releases.
 
 ## Configuration (FFI environment variables)
 
 | Variable | Effect |
 | --- | --- |
-| `HARUKI_ASSET_STUDIO_NATIVE_LIBRARY_PATH` | File, directory, or path-list where the DllImport resolver looks for `Texture2DDecoderNative`, `AssetStudioFBXNative` and `ooz` before the default locations (beside the FFI library, `runtimes/<RID>/native`, app base directory, current directory). `fmod` is imported from `AssetStudioUtility`, which has no resolver registered, so it is not covered and relies on the platform's default library search. |
+| `HARUKI_ASSET_STUDIO_NATIVE_LIBRARY_PATH` | File, directory, or path-list where the DllImport resolver looks for `Texture2DDecoderNative`, `AssetStudioFBXNative` and `ooz` before the default locations (beside the FFI library, `runtimes/<RID>/native`, app base directory, current directory). `fmod` is not covered (its DllImport is in `AssetStudioUtility`, which has no resolver registered) and the FFI never needs it: audio reads return the clip's stored bytes. |
 | `HARUKI_ASSET_STUDIO_NATIVE_MAX_CACHED_READ_PAYLOAD_BYTES` | Cap for the per-context cache that lets a read `size` call be followed by `into` without re-reading. Default 512 MiB; `0` disables it. |
 | `HARUKI_ASSET_STUDIO_NATIVE_TRACE`, `HARUKI_ASSET_STUDIO_NATIVE_DIAGNOSTICS` | Either one (`1`, `true`, `yes`, `debug`, `trace`) turns on the diagnostics log. |
 | `HARUKI_ASSET_STUDIO_NATIVE_LOG_DIR` | Directory for that log (`native-<pid>.log`). Default: `<temp>/haruki-assetstudio-native`. |
@@ -82,5 +87,6 @@ Building the CLI without `-r` runs the upstream `CopyExtraFilesPortable` target,
 - Project references in `AssetStudioCore`, `AssetStudioUtility` and `AssetStudioCLI` (and in `AssetStudio` and `AssetStudioFBXWrapper`) are duplicated per `PublishAot` value. The AOT variants pin a target framework through `SetTargetFramework` (net10.0 for Core, Utility, AssetStudio and the FBX wrapper; net9.0 for the CLI) and strip `PublishAot;PublishTrimmed;NativeLib;SelfContained`. `AssetStudioFFI` always uses the pinned, stripped form (net10.0) with no duplication. Follow that pattern when adding a reference.
 - The C ABI is mirrored in three places: `AssetStudioFFI/NativeExports.cs`, `AssetStudioFFI/haruki_assetstudio_native.h`, and `AssetStudioFFI/rust/haruki-assetstudio/src/lib.rs`. Change them together. Callers check struct sizes through `haruki_assetstudio_abi_layout_v1`, and a `_v1` suffix changes only when that entry point's C ABI changes (see `README.FFI.md`).
 - FFI image reads only return raw RGBA; encoding to PNG and other formats is the caller's job.
-- The header comment in `haruki_assetstudio_native.h` still mentions payload-kind "capability arrays". The capabilities struct has no such fields; payload streaming tiers are internal to `AssetStudioCore` (`AssetStudioPayloadStreamingTier`).
+- Payload streaming tiers are internal to `AssetStudioCore` (`AssetStudioPayloadStreamingTier`); `capabilities_v1` carries only ABI versions and `supports_*` flags.
+- `fmod` is only used by the CLI's export path (`AudioClipConverter`, reached from `ParallelExporter`). CoreCLR finds it through default probing because RID-specific CLI builds copy `libfmod` beside `AssetStudioUtility.dll`. No FFI entry point decodes audio, so the FFI's resolver does not cover `AssetStudioUtility` and does not need to.
 - Prebuilt native libraries now live in `AssetStudioCore/Libraries/`, not `AssetStudioCLI/Libraries/`. Both the CLI and the FFI publish copy from there.

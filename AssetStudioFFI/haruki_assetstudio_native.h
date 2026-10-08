@@ -34,27 +34,24 @@ extern "C" {
  * haruki_assetstudio_free_string is retained only as an ABI compatibility
  * helper for callers that still resolve the symbol.
  *
- * haruki_assetstudio_capabilities_v1 reports the typed FFI feature flags.
- * legacy_static_engine is false, max_active_contexts reports the active
- * context limit through haruki_assetstudio_limits_v1, and
- * per-context lifetime guards reject close/read races with a retryable
- * context-busy status. Open/list/lookup/read/close calls can run across
- * different contexts; narrow dependency locks may still be used internally.
- * Callers should use the flow:
+ * haruki_assetstudio_capabilities_v1 reports per-entry-point ABI versions and
+ * integer supports_* feature flags only. haruki_assetstudio_limits_v1 reports
+ * size and count limits (max_active_contexts, max_concurrent_operations, ...)
+ * and legacy_static_engine=0. Per-context lifetime guards reject close/read
+ * races with a retryable context-busy status. Open/list/lookup/read/close
+ * calls can run across different contexts; narrow dependency locks may still
+ * be used internally. Callers should use the flow:
  * open(include_assets=false), paged list, batch read, close/free.
- * native_console_capture=false means the Native layer does not redirect
- * process-wide stdout/stderr during normal calls.
- * Texture image reads need Texture2DDecoderNative beside this library, or a
- * HARUKI_ASSET_STUDIO_NATIVE_LIBRARY_PATH file/directory/path-list override.
- * Capability arrays split payload native-ness: source_streaming/native_streaming
- * kinds are raw/audio_raw/video_raw; resident_buffer kinds are parsed object
- * arrays written directly; generated_streaming kinds are encoder/text/json/obj
- * output streamed to the caller/native buffer. shader_text is mixed: simple
- * script shaders write original bytes after the header, while compressed or
- * subprogram shaders generate converted text. Texture array bundles use a
- * counting pass for entry lengths; temp_file_intermediate kinds stream from
- * temporary files; managed_intermediate kinds still use full managed payloads
- * before the final FFI write.
+ * native_console_capture=0 (in both responses) means the Native layer does not
+ * redirect process-wide stdout/stderr during normal calls.
+ * Native dependencies are resolved from HARUKI_ASSET_STUDIO_NATIVE_LIBRARY_PATH
+ * (file, directory or path-list) first, then beside this library:
+ * Texture2DDecoderNative for image reads, ooz for Oodle-compressed bundles and
+ * AssetStudioFBXNative for animator_bundle_fbx reads. fmod is not needed:
+ * audio reads return the clip's stored bytes (audio_raw), not decoded audio.
+ * No capability field describes how a payload kind is produced; that
+ * streaming tier is internal (see README.FFI.md). Image reads return raw RGBA
+ * only; encoding is the caller's job.
  * Typed v1/v1 requests require struct_size=sizeof(request), flags=0 unless a
  * documented capability says otherwise, and reserved=0.
  */
