@@ -399,7 +399,7 @@ namespace AssetStudioCore
             return GetObjectsByNormalizedTypes(normalizedTypes);
         }
 
-        private IReadOnlyList<AssetItem> GetObjectsByNormalizedTypes(IReadOnlySet<string> normalizedTypes)
+        private IReadOnlyList<AssetItem> GetObjectsByNormalizedTypes(HashSet<string> normalizedTypes)
         {
             assetTypeFilterIndex ??= BuildAssetTypeFilterIndex();
             var selected = new HashSet<AssetItem>();
@@ -585,7 +585,7 @@ namespace AssetStudioCore
                 : string.Equals(value, query, StringComparison.OrdinalIgnoreCase);
         }
 
-        private static bool RequestedTypesMatchAsset(IReadOnlySet<string> normalizedTypes, string assetType)
+        private static bool RequestedTypesMatchAsset(HashSet<string> normalizedTypes, string assetType)
         {
             var normalizedAssetType = NormalizeAssetTypeName(assetType);
             if (normalizedTypes.Contains(normalizedAssetType))
@@ -691,7 +691,7 @@ namespace AssetStudioCore
             const int HasImage = 8;
             const int HasText = 16;
 
-            static long Clamp(long value) => Math.Clamp(value, 0, int.MaxValue);
+            static long Clamp(long value) => ClampToInt32Range(value);
             static AssetStudioPayloadCapacity Capacity(long auto, int flags, long raw = 0, long image = 0, long text = 0)
             {
                 if (raw > 0)
@@ -766,12 +766,12 @@ namespace AssetStudioCore
         {
             if (texture.m_Width <= 0 || texture.m_Height <= 0)
             {
-                return Math.Clamp(fallback, 0, int.MaxValue);
+                return ClampToInt32Range(fallback);
             }
 
             var pixels = SafeMultiply(texture.m_Width, texture.m_Height);
             var rgbaBytes = SafeMultiply(pixels, 4);
-            return Math.Clamp(Math.Max(fallback, rgbaBytes + 4096), 0, int.MaxValue);
+            return ClampToInt32Range(Math.Max(fallback, rgbaBytes + 4096));
         }
 
         private static long EstimateTextureArrayImageCapacity(Texture2DArray textureArray, long fallback)
@@ -779,12 +779,12 @@ namespace AssetStudioCore
             var depth = Math.Max(textureArray.m_Depth, textureArray.TextureList?.Count ?? 0);
             if (textureArray.m_Width <= 0 || textureArray.m_Height <= 0 || depth <= 0)
             {
-                return Math.Clamp(fallback, 0, int.MaxValue);
+                return ClampToInt32Range(fallback);
             }
 
             var pixels = SafeMultiply(SafeMultiply(textureArray.m_Width, textureArray.m_Height), depth);
             var rgbaBytes = SafeMultiply(pixels, 4);
-            return Math.Clamp(Math.Max(fallback, rgbaBytes + 4096L * depth + PayloadBundleHeaderLengthEstimate(depth)), 0, int.MaxValue);
+            return ClampToInt32Range(Math.Max(fallback, rgbaBytes + 4096L * depth + PayloadBundleHeaderLengthEstimate(depth)));
         }
 
         private static long EstimateSpriteImageCapacity(Sprite sprite, long fallback)
@@ -793,11 +793,17 @@ namespace AssetStudioCore
             var height = Math.Max(0, (long)Math.Ceiling(sprite.m_Rect.height));
             if (width <= 0 || height <= 0)
             {
-                return Math.Clamp(fallback, 0, int.MaxValue);
+                return ClampToInt32Range(fallback);
             }
 
             var rgbaBytes = SafeMultiply(SafeMultiply(width, height), 4);
-            return Math.Clamp(Math.Max(fallback, rgbaBytes + 4096), 0, int.MaxValue);
+            return ClampToInt32Range(Math.Max(fallback, rgbaBytes + 4096));
+        }
+
+        // Math.Clamp is not available on .NET Framework (net472).
+        private static long ClampToInt32Range(long value)
+        {
+            return value < 0 ? 0 : value > int.MaxValue ? int.MaxValue : value;
         }
 
         private static long SafeMultiply(long left, long right)
@@ -1110,7 +1116,7 @@ namespace AssetStudioCore
 
         private static void WriteFiniteNumberOrString(Utf8JsonWriter writer, float value)
         {
-            if (float.IsFinite(value))
+            if (!float.IsNaN(value) && !float.IsInfinity(value))
             {
                 writer.WriteNumberValue(value);
             }
@@ -1122,7 +1128,7 @@ namespace AssetStudioCore
 
         private static void WriteFiniteNumberOrString(Utf8JsonWriter writer, double value)
         {
-            if (double.IsFinite(value))
+            if (!double.IsNaN(value) && !double.IsInfinity(value))
             {
                 writer.WriteNumberValue(value);
             }
@@ -1517,13 +1523,25 @@ namespace AssetStudioCore
             };
         }
 
+        private static string GetRelativePath(string directory, string path)
+        {
+#if NETFRAMEWORK
+            // Path.GetRelativePath is not available on .NET Framework. Callers pass files enumerated under directory.
+            var root = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var fullPath = Path.GetFullPath(path);
+            return fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? fullPath.Substring(root.Length) : fullPath;
+#else
+            return Path.GetRelativePath(directory, path);
+#endif
+        }
+
         private static void WriteDirectoryPayloadBundle(string directory, Stream destination)
         {
             var entries = Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
                 .OrderBy(path => path, StringComparer.Ordinal)
                 .Select(path => (
                     Path: path,
-                    Name: Path.GetRelativePath(directory, path).Replace(Path.DirectorySeparatorChar, '/'),
+                    Name: GetRelativePath(directory, path).Replace(Path.DirectorySeparatorChar, '/'),
                     PayloadLen: new FileInfo(path).Length))
                 .ToArray();
             WritePayloadBundleHeader(destination, entries.Select(entry => (entry.Name, entry.PayloadLen)).ToArray());
